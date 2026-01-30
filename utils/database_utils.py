@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import json
 import random
 import string
@@ -11,6 +12,7 @@ from utils.scraper_utils import article_id
 
 
 DB_OBJECT_NAME = "rthk/world/db.json"
+HK_TZ = ZoneInfo("Asia/Hong_Kong")
 
 
 def _now_iso() -> str:
@@ -117,8 +119,9 @@ def inject_fake_articles(
 
 
 def backup_database(payload: dict[str, Any]) -> str:
-    date_part = datetime.now().strftime("%Y-%m-%d")
-    time_part = datetime.now().strftime("%H%M%S")
+    now_hkt = datetime.now(HK_TZ)
+    date_part = now_hkt.strftime("%Y-%m-%d")
+    time_part = now_hkt.strftime("%H%M%S")
     filename = f"{date_part}_{time_part}.json"
     object_name = f"rthk/world/backups/{filename}"
     upload_json_to_storage(object_name, payload)
