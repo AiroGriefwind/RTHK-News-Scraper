@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
-import os
 import random
 import string
 from typing import Any
@@ -117,19 +116,10 @@ def inject_fake_articles(
     return count, len(articles)
 
 
-def backup_database(
-    payload: dict[str, Any],
-    backup_dir: str = "backups",
-) -> str:
-    os.makedirs(backup_dir, exist_ok=True)
+def backup_database(payload: dict[str, Any]) -> str:
     date_part = datetime.now().strftime("%Y-%m-%d")
-    filename = f"{date_part}.json"
-    path = os.path.join(backup_dir, filename)
-    if os.path.exists(path):
-        time_part = datetime.now().strftime("%H%M%S")
-        path = os.path.join(backup_dir, f"{date_part}_{time_part}.json")
-
-    with open(path, "w", encoding="utf-8") as file:
-        json.dump(payload, file, ensure_ascii=False, indent=2)
-
-    return path
+    time_part = datetime.now().strftime("%H%M%S")
+    filename = f"{date_part}_{time_part}.json"
+    object_name = f"rthk/world/backups/{filename}"
+    upload_json_to_storage(object_name, payload)
+    return object_name

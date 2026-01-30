@@ -19,8 +19,8 @@ def render_import_export() -> None:
     st.metric("当前数据库条数", total_count)
 
     if st.button("备份数据库", key="backup_db"):
-        path = backup_database(database)
-        st.success(f"已备份数据库到：{path}")
+        object_name = backup_database(database)
+        st.success(f"已备份数据库到 Storage：{object_name}")
 
     if st.button("清空数据库", key="clear_db"):
         clear_database()
