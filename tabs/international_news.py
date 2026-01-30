@@ -73,10 +73,17 @@ def _render_email_panel() -> None:
                 st.error("未找到 Gmail OAuth 配置，请先配置 st.secrets。")
                 return
             token_path = st.secrets.get("gmail_token_path", "token.json")
+            if not str(token_path).strip():
+                token_path = None
+            token_object_name = st.secrets.get("gmail_token_object")
             subject = f"RTHK 国际新闻 {datetime.now().strftime('%Y-%m-%d')}"
             body = _build_email_body(unsent)
             try:
-                credentials = get_credentials(client_config, token_path)
+                credentials = get_credentials(
+                    client_config,
+                    token_path=token_path,
+                    token_object_name=token_object_name,
+                )
                 send_message(credentials, to_email, subject, body)
             except Exception as exc:  # pragma: no cover - UI feedback
                 st.error(f"发送失败：{exc}")
