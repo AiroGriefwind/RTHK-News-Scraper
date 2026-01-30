@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import json
 from typing import Iterable
 from urllib.parse import urljoin
 
@@ -10,7 +11,7 @@ import requests
 import streamlit as st
 from bs4 import BeautifulSoup
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, storage
 
 
 LIST_URL = "https://news.rthk.hk/rthk/ch/latest-news/world-news.htm"
@@ -131,26 +132,29 @@ def build_payload(items: Iterable[ArticleLink]) -> list[dict[str, str | None]]:
     return payload
 
 
-def get_firestore_client() -> firestore.Client:
+def get_storage_bucket() -> storage.Bucket:
     if not firebase_admin._apps:
         firebase_config = dict(st.secrets["firebase"])
         private_key = firebase_config.get("private_key")
         if private_key:
             firebase_config["private_key"] = private_key.replace("\\n", "\n")
+        bucket_name = st.secrets["firebase_storage"]["bucket"]
         cred = credentials.Certificate(firebase_config)
-        firebase_admin.initialize_app(cred)
-    return firestore.client()
+        firebase_admin.initialize_app(cred, {"storageBucket": bucket_name})
+    return storage.bucket()
 
 
-def upload_to_firestore(articles: list[dict[str, str | None]]) -> None:
-    db = get_firestore_client()
-    doc_ref = db.collection("rthk_world_top10").document("latest")
-    doc_ref.set(
-        {
-            "updated_at": datetime.now(timezone.utc),
-            "articles": articles,
-        }
-    )
+def upload_json_to_storage(articles: list[dict[str, str | None]]) -> str:
+    bucket = get_storage_bucket()
+    payload = {
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "articles": articles,
+    }
+    content = json.dumps(payload, ensure_ascii=False, indent=2)
+    object_name = "rthk/world/top10.json"
+    blob = bucket.blob(object_name)
+    blob.upload_from_string(content, content_type="application/json; charset=utf-8")
+    return object_name
 
 
 def main() -> None:
@@ -168,11 +172,11 @@ def main() -> None:
             links = parse_list(list_html)
             top_items = links[: int(max_items)]
 
-        with st.spinner("正在抓取正文并写入 Firebase..."):
+        with st.spinner("正在抓取正文并上传 Storage..."):
             payload = build_payload(top_items)
-            upload_to_firestore(payload)
+            object_name = upload_json_to_storage(payload)
 
-        st.success(f"已更新 {len(payload)} 条新闻到 Firestore。")
+        st.success(f"已更新 {len(payload)} 条新闻到 Storage：{object_name}")
         st.subheader("预览")
         for item in payload:
             st.markdown(f"**{item['title']}**")
