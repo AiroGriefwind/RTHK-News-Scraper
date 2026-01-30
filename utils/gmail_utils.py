@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from base64 import urlsafe_b64encode
+import json
+from pathlib import Path
+from typing import Any
+
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from email.mime.text import MIMEText
+
+
+GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+
+
+def load_client_config(raw: str | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(raw, str):
+        return json.loads(raw)
+    return dict(raw)
+
+
+def get_credentials(
+    client_config: dict[str, Any],
+    token_path: str = "token.json",
+) -> Credentials:
+    token_file = Path(token_path)
+    creds: Credentials | None = None
+
+    if token_file.exists():
+        creds = Credentials.from_authorized_user_file(str(token_file), GMAIL_SCOPES)
+
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+
+    if not creds or not creds.valid:
+        flow = InstalledAppFlow.from_client_config(client_config, GMAIL_SCOPES)
+        creds = flow.run_local_server(port=0)
+        token_file.write_text(creds.to_json(), encoding="utf-8")
+
+    return creds
+
+
+def build_message(to_email: str, subject: str, body: str) -> dict[str, str]:
+    message = MIMEText(body, _charset="utf-8")
+    message["to"] = to_email
+    message["subject"] = subject
+    raw = urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+    return {"raw": raw}
+
+
+def send_message(
+    credentials: Credentials,
+    to_email: str,
+    subject: str,
+    body: str,
+) -> dict[str, Any]:
+    service = build("gmail", "v1", credentials=credentials, cache_discovery=False)
+    message = build_message(to_email, subject, body)
+    return service.users().messages().send(userId="me", body=message).execute()

@@ -1,9 +1,92 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import streamlit as st
 
 from utils.database_utils import load_database, merge_articles, save_database
+from utils.gmail_utils import get_credentials, load_client_config, send_message
 from utils.scraper_utils import build_payload, fetch_list_links
+
+
+def _build_email_body(items: list[dict[str, str | None]]) -> str:
+    lines = [f"本次共 {len(items)} 条国际新闻：", ""]
+    for idx, item in enumerate(items, 1):
+        title = item.get("title") or "(标题为空)"
+        lines.append(f"{idx}. {title}")
+        if item.get("time_text"):
+            lines.append(f"时间：{item['time_text']}")
+        if item.get("url"):
+            lines.append(item["url"])
+        body = item.get("body")
+        if body:
+            lines.append(body)
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def _get_gmail_client_config() -> dict | None:
+    if "gmail_oauth" in st.secrets:
+        return load_client_config(st.secrets["gmail_oauth"])
+    if "gmail" in st.secrets:
+        gmail_section = dict(st.secrets["gmail"])
+        if "client_config" in gmail_section:
+            return load_client_config(gmail_section["client_config"])
+    return None
+
+
+def _render_email_panel() -> None:
+    st.subheader("邮件发送")
+    st.caption("手动发送未标记为 emailed 的新闻。")
+
+    if "world_email_panel_open" not in st.session_state:
+        st.session_state["world_email_panel_open"] = False
+
+    if st.button("准备email", key="world_prepare_email"):
+        st.session_state["world_email_panel_open"] = not st.session_state[
+            "world_email_panel_open"
+        ]
+
+    if not st.session_state["world_email_panel_open"]:
+        return
+
+    database = load_database()
+    articles = database.get("articles", [])
+    unsent = [item for item in articles if not item.get("emailed")]
+    unsent_count = len(unsent)
+
+    col_left, col_right = st.columns([3, 1])
+    with col_left:
+        with st.expander(f"未发送的新闻：{unsent_count} 条", expanded=False):
+            if unsent:
+                for item in unsent:
+                    st.markdown(f"- {item.get('title') or '(标题为空)'}")
+            else:
+                st.caption("暂无未发送新闻。")
+
+    with col_right:
+        to_email = st.text_input("收件人邮箱", key="world_email_to")
+        send_disabled = not unsent or not to_email
+        if st.button("发送邮件", key="world_send_email", disabled=send_disabled):
+            client_config = _get_gmail_client_config()
+            if not client_config:
+                st.error("未找到 Gmail OAuth 配置，请先配置 st.secrets。")
+                return
+            token_path = st.secrets.get("gmail_token_path", "token.json")
+            subject = f"RTHK 国际新闻 {datetime.now().strftime('%Y-%m-%d')}"
+            body = _build_email_body(unsent)
+            try:
+                credentials = get_credentials(client_config, token_path)
+                send_message(credentials, to_email, subject, body)
+            except Exception as exc:  # pragma: no cover - UI feedback
+                st.error(f"发送失败：{exc}")
+                return
+
+            for item in unsent:
+                item["emailed"] = True
+            database["articles"] = articles
+            save_database(database)
+            st.success(f"已发送 {unsent_count} 条新闻，并更新 emailed 标记。")
 
 
 def render_international_news() -> None:
@@ -48,3 +131,6 @@ def render_international_news() -> None:
                 if show_bodies:
                     st.write(item["body"] or "(正文为空)")
                 st.divider()
+
+    st.divider()
+    _render_email_panel()
