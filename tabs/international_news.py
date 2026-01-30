@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 
 import streamlit as st
 
@@ -76,6 +77,11 @@ def _render_email_panel() -> None:
             if not str(token_path).strip():
                 token_path = None
             token_object_name = st.secrets.get("gmail_token_object")
+            token_payload = None
+            token_raw = st.secrets.get("gmail_token_json")
+            if token_raw:
+                token_payload = json.loads(token_raw) if isinstance(token_raw, str) else dict(token_raw)
+            allow_oauth = bool(st.secrets.get("gmail_allow_oauth", True))
             subject = f"RTHK 国际新闻 {datetime.now().strftime('%Y-%m-%d')}"
             body = _build_email_body(unsent)
             try:
@@ -83,6 +89,8 @@ def _render_email_panel() -> None:
                     client_config,
                     token_path=token_path,
                     token_object_name=token_object_name,
+                    token_payload=token_payload,
+                    allow_oauth=allow_oauth,
                 )
                 send_message(credentials, to_email, subject, body)
             except Exception as exc:  # pragma: no cover - UI feedback

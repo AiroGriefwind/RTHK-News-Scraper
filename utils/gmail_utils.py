@@ -27,13 +27,18 @@ def get_credentials(
     client_config: dict[str, Any],
     token_path: str | None = "token.json",
     token_object_name: str | None = None,
+    token_payload: dict[str, Any] | None = None,
+    allow_oauth: bool = True,
 ) -> Credentials:
     token_file = Path(token_path) if token_path else None
     creds: Credentials | None = None
 
+    if token_payload:
+        creds = Credentials.from_authorized_user_info(token_payload, GMAIL_SCOPES)
+
     if token_object_name:
         stored = read_json_from_storage(token_object_name)
-        if stored:
+        if stored and not creds:
             creds = Credentials.from_authorized_user_info(stored, GMAIL_SCOPES)
 
     if not creds and token_file and token_file.exists():
@@ -47,6 +52,11 @@ def get_credentials(
             token_file.write_text(creds.to_json(), encoding="utf-8")
 
     if not creds or not creds.valid:
+        if not allow_oauth:
+            raise RuntimeError(
+                "缺少可用的 Gmail token，请先在本地完成 OAuth 授权，"
+                "并配置 gmail_token_object 或 gmail_token_json。"
+            )
         flow = InstalledAppFlow.from_client_config(client_config, GMAIL_SCOPES)
         creds = flow.run_local_server(port=0)
         if token_object_name:
